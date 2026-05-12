@@ -4,6 +4,7 @@ import os
 import io
 import tempfile
 import os
+from twilio.twiml.messaging_response import MessagingResponse
 
 app = Flask(__name__)
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -149,7 +150,30 @@ def speak():
         return send_file(audio_data, mimetype="audio/mpeg", as_attachment=False)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+@app.route("/whatsapp", methods=["POST"])
+def whatsapp():
+    user_message = request.form.get("Body")
+    session_id = request.form.get("From")
 
+    if session_id not in sessions:
+        sessions[session_id] = []
+
+    sessions[session_id].append({"role": "user", "content": user_message})
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": HOTEL_SYSTEM_PROMPT},
+            *sessions[session_id]
+        ]
+    )
+
+    assistant_message = response.choices[0].message.content
+    sessions[session_id].append({"role": "assistant", "content": assistant_message})
+
+    resp = MessagingResponse()
+    resp.message(assistant_message)
+    return str(resp)
 
 if __name__ == "__main__":
     app.run(debug=True)
