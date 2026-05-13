@@ -5,6 +5,8 @@ import io
 import tempfile
 import os
 from twilio.twiml.messaging_response import MessagingResponse
+import threading
+import requests as req
 
 app = Flask(__name__)
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -174,6 +176,44 @@ def whatsapp():
     resp = MessagingResponse()
     resp.message(assistant_message)
     return str(resp)
+TELEGRAM_TOKEN = "8949101110:AAHU7DowtB8JlKsUi5Q8oQhFAPvil3Wr07U"
+TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
+
+@app.route("/telegram", methods=["POST"])
+def telegram():
+    data = request.json
+    if "message" not in data:
+        return "ok"
+    
+    chat_id = str(data["message"]["chat"]["id"])
+    user_message = data["message"].get("text", "")
+    
+    if not user_message:
+        return "ok"
+
+    if chat_id not in sessions:
+        sessions[chat_id] = []
+
+    sessions[chat_id].append({"role": "user", "content": user_message})
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": HOTEL_SYSTEM_PROMPT},
+            *sessions[chat_id]
+        ]
+    )
+
+    assistant_message = response.choices[0].message.content
+    sessions[chat_id].append({"role": "assistant", "content": assistant_message})
+
+    req.post(f"{TELEGRAM_API}/sendMessage", json={
+        "chat_id": chat_id,
+        "text": assistant_message,
+        "parse_mode": "Markdown"
+    })
+
+    return "ok"
 
 if __name__ == "__main__":
     app.run(debug=True)
